@@ -95,7 +95,8 @@ int dhcp_max_agent_option_packet_length = DHCP_MTU_MIN;
 enum { forward_and_append,	/* Forward and append our own relay option. */
        forward_and_replace,	/* Forward, but replace theirs with ours. */
        forward_untouched,	/* Forward without changes. */
-       discard } agent_relay_mode = forward_and_replace;
+       discard,
+       require} agent_relay_mode = forward_and_replace;
 
 u_int16_t local_port;
 u_int16_t remote_port;
@@ -155,7 +156,7 @@ static const char url[] =
 #else
 #define DHCRELAY_USAGE \
 "Usage: dhcrelay [-d] [-q] [-a] [-D] [-A <length>] [-c <hops>] [-p <port>]\n" \
-"                [-m append|replace|forward|discard]\n" \
+"                [-m append|replace|forward|discard|require]\n" \
 "                [-i interface0 [ ... -i interfaceN]\n" \
 "                [-rid <iface>:<mac|ip|system-name>] - Use interface mac, interface IP or system/hostname as remote id for iface.\n" \
 "                [-cid <iface>:<cicuit-id>] - Hex value for circuit id, to be used for iface.\n" \
@@ -359,6 +360,8 @@ main(int argc_org, char **argv_org) {
 				agent_relay_mode = forward_untouched;
 			} else if (!strcasecmp(argv[i], "discard")) {
 				agent_relay_mode = discard;
+			} else if (!strcasecmp(argv[i], "require")) {
+				agent_relay_mode = require;
 			} else
 				usage();
 		} else if (!strcmp(argv[i], "-D")) {
@@ -1010,7 +1013,7 @@ find_interface_by_agent_option(struct dhcp_packet *packet,
 static int
 add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			unsigned length, struct in_addr giaddr) {
-	int is_dhcp = 0, mms;
+	int is_dhcp = 0, has_opt82 = 0, mms;
 	unsigned optlen;
 	u_int8_t *op, *nextop, *sp, *max, *end_pad = NULL;
 	u_int8_t remote_id[MAX_LEN_RID];
@@ -1086,6 +1089,7 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			/* There's already a Relay Agent Information option
 			   in this packet.   How embarrassing.   Decide what
 			   to do based on the mode the user specified. */
+			has_opt82 = 1;
 
 			switch(agent_relay_mode) {
 			      case forward_and_append:
@@ -1094,6 +1098,10 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 				return (length);
 			      case discard:
 				return (0);
+
+					case require: /* WeOS extension */
+				goto out;
+
 			      case forward_and_replace:
 			      default:
 				break;
@@ -1131,6 +1139,25 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 	/* If it's not a DHCP packet, we're not supposed to touch it. */
 	if (!is_dhcp)
 		return (length);
+
+	/* If agent option is required and we come here, the packet has no
+		agent option so drop it. */
+	if (agent_relay_mode == require) {
+		u_int8_t *ep, len;
+
+		if (!has_opt82) {
+			log_info("Discarding packet, missing required agent option.");
+			return 0;
+		}
+		/* Required Relay Agent option exists.
+		 * Fast forward to the end of Opt 82! */
+		sp = op;
+		ep = ++sp;
+		len = *ep;
+		sp += len + 1;
+
+		goto opt82_ready;
+	}
 
 	/* If the packet was padded out, we can store the agent option
 	   at the beginning of the padding. */
@@ -1229,6 +1256,7 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			   optlen + 3);
 	}
 
+	opt82_ready:
 	/*
 	 * Deposit an END option unless the packet is full (shouldn't
 	 * be possible).
