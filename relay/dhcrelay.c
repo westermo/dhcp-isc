@@ -158,6 +158,7 @@ static const char url[] =
 "                [-m append|replace|forward|discard]\n" \
 "                [-i interface0 [ ... -i interfaceN]\n" \
 "                [-rid <iface>:<mac|ip|system-name>] - Use interface mac, interface IP or system/hostname as remote id for iface.\n" \
+"                [-cid <iface>:<cicuit-id>] - Hex value for circuit id, to be used for iface.\n" \
 "                server0 [ ... serverN]\n\n"
 #endif
 
@@ -181,12 +182,12 @@ int parse(FILE *f)
 		{
 			if (strlen(tok) > 0)
 			{
-				file_argv[i] = malloc(strlen(tok) + 1); 
+				file_argv[i] = malloc(strlen(tok) + 1);
 				strcpy(file_argv[i++], tok);
 			}
 			tok = strtok(NULL, " \n");
 		}
-	}	
+	}
 	if (line)
 		free(line);
 	return i;
@@ -240,7 +241,7 @@ main(int argc_org, char **argv_org) {
 
 #if !defined(DEBUG)
 	setlogmask(LOG_UPTO(LOG_INFO));
-#endif	
+#endif
 
 	/*
 	 * Set up the signal handlers, currently we only
@@ -408,7 +409,7 @@ main(int argc_org, char **argv_org) {
 			}
 			strncpy (tokens, argv[i], 256);
 			char *tok = strtok(tokens, ":");
-			tmp = find_iface(tok);			
+			tmp = find_iface(tok);
 			tok = strtok(NULL, ":");
 			if (!strcasecmp(tok, "ip")) {
 				tmp->remote_id_type = rid_ip;
@@ -420,6 +421,26 @@ main(int argc_org, char **argv_org) {
 			{
 				usage();
 			}
+		} else if (!strcmp(argv[i], "-cid")) {
+			if (++i == argc) {
+				usage();
+			}
+			strncpy (tokens, argv[i], 256);
+			char *tok = strtok(tokens, ":");
+			tmp = find_iface(tok);
+			tok = strtok(NULL, "");
+			if (tok){
+				if (tmp)
+				{
+					tmp->circuit_id_len = hex2buf(tok, &tmp->circuit_id[0], MAX_LEN_CID);
+					if (tmp->circuit_id_len < 1)
+						usage();
+				}
+				else
+				   usage();
+			}
+			else
+				usage();
 		} else if (!strcmp(argv[i], "--version")) {
 			log_info("isc-dhcrelay-%s", PACKAGE_VERSION);
 			exit(0);
@@ -602,7 +623,7 @@ main(int argc_org, char **argv_org) {
 			else {
 				fprintf(pf, "%ld\n",(long)getpid());
 				fclose(pf);
-			}	
+			}
 		}
 
 		close(0);
@@ -1520,7 +1541,7 @@ process_up6(struct packet *packet, struct stream_list *dp) {
 	if (!option_state_allocate(&opts, MDL)) {
 		log_fatal("No memory for upwards options.");
 	}
-	
+
 	/* Add an interface-id (if used). */
 	if (use_if_id) {
 		int if_id;
@@ -1558,7 +1579,7 @@ process_up6(struct packet *packet, struct stream_list *dp) {
 	/* Finish the relay-forward message. */
 	cursor += store_options6(forw_data + cursor,
 				 sizeof(forw_data) - cursor,
-				 opts, packet, 
+				 opts, packet,
 				 required_forw_opts, NULL);
 	option_state_dereference(&opts, MDL);
 
@@ -1568,7 +1589,7 @@ process_up6(struct packet *packet, struct stream_list *dp) {
 			     (size_t) cursor, &up->link);
 	}
 }
-			     
+
 /*
  * Process a packet downwards, i.e., from server to client.
  */

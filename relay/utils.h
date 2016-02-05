@@ -33,6 +33,8 @@ int sys_inet_ntop (int addr, char *str, size_t len);
 
 int iface_ip (const char *iface);
 
+int hex2buf (char *hex_str, u_int8_t *buf, int buflen);
+
 struct interface_info *find_iface(const char *if_name);
 
 const char *int_to_addr(int addr);

@@ -1105,6 +1105,7 @@ struct dns_update_state {
 };
 
 /* Information about each network interface. */
+#define MAX_LEN_CID 32
 #define MAX_LEN_RID 64
 
 typedef enum rid_types{
@@ -1135,7 +1136,7 @@ struct interface_info {
 	int v6address_max;		/* Maximum number of IPv6 addresses
 					   we can store in current buffer. */
 
-	u_int8_t *circuit_id;		/* Circuit ID associated with this
+	u_int8_t circuit_id[MAX_LEN_CID];	/* Circuit ID associated with this
 					   interface. */
 	unsigned circuit_id_len;	/* Length of Circuit ID, if there
 					   is one. */

@@ -24,7 +24,7 @@
 
 #include <assert.h>
 #include <errno.h>
-
+#include <net/if.h>
 #include <net/ethernet.h>
 #include <netlink/netlink.h>
 #include <netlink/route/link/bridge.h>
@@ -302,4 +302,59 @@ int iface_ip (const char *iface) {
 		errno = save_errno;
 
 	return result;
+}
+
+/**
+ * hex2buf - convert hex string to hex-buffer.
+ * @hex_str: The string to convert, may start with '0x'.
+ *           The hex string may be in the form of xx:xx:xx:xx.
+ * @buf:     The buffer into which the hex values should be written.
+ * @buflen:  The size of the buffer.
+ *
+ * Returns:
+ * The number of bytes written into the buffer.
+ */
+int hex2buf (char *hex_str, u_int8_t *buf, int buflen) {
+	int i = 0, odd = 0;
+
+	if (!hex_str)
+		return 0;
+	if (!buf)
+		return 0;
+
+	/* Allow hex strings starting with 0x */
+	if (hex_str[0] == '0' && hex_str[1] == 'x')
+		hex_str += 2;
+
+	/* When not using xx:xx form, handle case with odd number of hexadecimal digits */
+	if ((strlen (hex_str) & 1) && !strchr (hex_str, ':') && !strchr (hex_str, '.'))
+		odd = 1;
+
+	for (i = 0; i < buflen && *hex_str && !isspace (*hex_str); i++) {
+		char tmp[3];
+
+		if (!isxdigit (*hex_str))
+			return 0;
+
+		if (odd) {
+			tmp[0] = '0';
+			odd = 0;
+		}
+		else {
+			tmp[0] = *hex_str++;
+		}
+
+		if (!isxdigit (*hex_str))
+			return 0;
+
+		tmp[1] = *hex_str++;
+		tmp[2] = 0;
+		buf[i] = (u_int8_t) strtoul (tmp, NULL, 16);
+
+		/* Allow hex strings in the form of xx:xx:xx:xx and peculiar quad-dotted xxxx.xxxx.xxxx */
+		if (*hex_str == ':' || *hex_str == '.')
+			hex_str++;
+	}
+
+	return i;
 }
