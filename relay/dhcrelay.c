@@ -100,6 +100,8 @@ enum { forward_and_append,	/* Forward and append our own relay option. */
 
 u_int16_t local_port;
 u_int16_t remote_port;
+u_int16_t server_port = 0;
+
 char *file_argv[255];
 
 /* Relay agent server list. */
@@ -406,6 +408,11 @@ main(int argc_org, char **argv_org) {
 			sl->next = upstreams;
 			upstreams = sl;
 #endif
+		} else if (!strcmp(argv[i], "-s")) {
+			if (++i == argc)
+				usage();
+			server_port = validate_port(argv[i]);
+			log_debug("Using server port %d", ntohs(server_port));
 		} else if (!strcmp(argv[i], "-rid")) {
 			if (++i == argc) {
 				usage();
@@ -543,6 +550,10 @@ main(int argc_org, char **argv_org) {
 		endservent();
 	}
 
+	if (!server_port)
+		server_port = local_port;
+
+
 	if (local_family == AF_INET) {
 		/* We need at least one server */
 		if (servers == NULL) {
@@ -552,7 +563,7 @@ main(int argc_org, char **argv_org) {
 
 		/* Set up the server sockaddrs. */
 		for (sp = servers; sp; sp = sp->next) {
-			sp->to.sin_port = local_port;
+			sp->to.sin_port = server_port;
 			sp->to.sin_family = AF_INET;
 #ifdef HAVE_SA_LEN
 			sp->to.sin_len = sizeof sp->to;
