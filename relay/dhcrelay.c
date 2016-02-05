@@ -95,6 +95,7 @@ relay_mode_types agent_relay_mode = forward_and_replace;
 u_int16_t local_port;
 u_int16_t remote_port;
 u_int16_t server_port = 0;
+u_int16_t force_server_id = 0;
 
 char *file_argv[255];
 
@@ -124,6 +125,7 @@ static void setup_streams(void);
 static void do_relay4(struct interface_info *, struct dhcp_packet *,
 	              unsigned int, unsigned int, struct iaddr,
 		      struct hardware *);
+static void set_server_id(struct dhcp_packet *, struct in_addr *, unsigned int);
 static int add_relay_agent_options(struct interface_info *,
 				   struct dhcp_packet *, unsigned,
 				   struct in_addr);
@@ -289,6 +291,10 @@ main(int argc_org, char **argv_org) {
 			local_port = validate_port(argv[i]);
 			log_debug("binding to user-specified port %d",
 				  ntohs(local_port));
+		} else if (!strcmp(argv[i], "-f")) {
+			force_server_id = 1;
+			log_debug("Enabling force Server Identity.");
+
 		} else if (!strcmp(argv[i], "-c")) {
 			int hcount;
 			if (++i == argc)
@@ -829,6 +835,8 @@ do_relay4(struct interface_info *ip, struct dhcp_packet *packet,
 	/* Otherwise, it's a BOOTREQUEST, so forward it to all the
 	   servers. */
 	for (sp = servers; sp; sp = sp->next) {
+		if (force_server_id)
+			set_server_id(packet, &sp->to.sin_addr, length);
 		if (send_packet((fallback_interface
 				 ? fallback_interface : interfaces),
 				 NULL, packet, length, ip->addresses[0],
@@ -842,7 +850,33 @@ do_relay4(struct interface_info *ip, struct dhcp_packet *packet,
 			++client_packets_relayed;
 		}
 	}
-				 
+}
+
+/*
+ * For non-RFC5107 compliant DHCP servers.
+ * Set Option 54, Server Identifier, used to tell client to use relay for all
+ * communication with the DHCP server so that we can tack on Option 82.
+ */
+static void set_server_id(struct dhcp_packet *packet, struct in_addr *address, unsigned int length)
+{
+	u_int8_t * op = &packet->options[4];
+	u_int8_t * max = ((u_int8_t *)packet) + length;
+
+	while (op < max) {
+		switch(*op) {
+		case DHO_PAD:
+			op = op + 1;
+			break;
+
+		case DHO_DHCP_SERVER_IDENTIFIER:
+			memcpy(&op[2], address, op[1]);
+			/* fall through */
+
+		default:
+			op = op + op[1] + 2;
+			break;
+		}
+	}
 }
 
 /* Strip any Relay Agent Information options from the DHCP packet
@@ -893,6 +927,12 @@ strip_relay_agent_options(struct interface_info *in,
 			if (sp != op)
 				*sp++ = *op++;
 			goto out;
+
+		      case DHO_DHCP_SERVER_IDENTIFIER:
+			if (force_server_id) {
+				memcpy(&op[2], &(*out)->addresses[0].s_addr, op[1]);
+			}
+			goto skip;
 
 		      case DHO_DHCP_AGENT_OPTIONS:
 			/* We shouldn't see a relay agent option in a
@@ -1282,7 +1322,8 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 	optlen += remote_id_len + 2;    /* RAI_REMOTE_ID + len */
 
 	/* Support for RFC5107 -- full DHCP proxy */
-	optlen += 6; 	/* RAI_SERVER_ID + len + 4 address bytes */
+	if (!force_server_id)
+		optlen += 6; 	/* RAI_SERVER_ID + len + 4 address bytes */
 
 	/* We do not support relay option fragmenting(multiple options to
 	 * support an option data exceeding 255 bytes).
@@ -1317,7 +1358,8 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 		}
 
 	add_subopt11:	/* RFC5107 */
-		sp += set_subopt11(ip, packet, sp);
+		if (!force_server_id)
+			sp += set_subopt11(ip, packet, sp);
 	} else {
 		++agent_option_errors;
 		log_error("No room in packet (used %d of %d) "
