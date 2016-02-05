@@ -68,6 +68,12 @@ struct dhcp_packet {
 			  (actual length dependent on MTU). */
 };
 
+struct dhcp_opt {
+	u_int8_t       code;
+	u_int8_t       len;
+	struct in_addr addr[1];
+} __attribute__ ((packed));
+
 /* BOOTP (rfc951) message types */
 #define	BOOTREQUEST	1
 #define BOOTREPLY	2
@@ -183,6 +189,7 @@ struct dhcp_packet {
 #define RAI_REMOTE_ID	2
 #define RAI_AGENT_ID	3
 #define RAI_LINK_SELECT	5
+#define RAI_SERVER_ID	11      /* RFC5107 - Server ID Override */
 
 /* FQDN suboptions: */
 #define FQDN_NO_CLIENT_UPDATE		1

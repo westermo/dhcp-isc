@@ -1006,6 +1006,35 @@ find_interface_by_agent_option(struct dhcp_packet *packet,
 }
 
 /*
+ * For RFC5107 compliant servers.
+ * Add Option 82 sub-option 11, Server Identity Override.
+ */
+static u_int8_t
+set_subopt11(struct interface_info *ip, struct dhcp_packet *packet, u_int8_t *sp)
+{
+	struct dhcp_opt subopt11 = {
+		.code = RAI_SERVER_ID,
+		.len  = 4,
+		.addr = { ip->addresses[0] },
+	};
+
+	if (packet->giaddr.s_addr != 0) {
+		/* Override Server Identifier, for client to remote
+		 * relay agent communication.  This allows us to
+		 * override the GIADDR field. */
+		subopt11.addr[0] = packet->giaddr;
+
+		/* Overide GIADDR to point to ourselves, so the next
+		 * relay agent, or server, can point back to us. */
+		packet->giaddr = ip->addresses[0];
+	}
+
+	memcpy(sp, &subopt11, sizeof(subopt11));
+
+	return sizeof(subopt11);
+}
+
+/*
  * Examine a packet to see if it's a candidate to have a Relay
  * Agent Information option tacked onto its tail.   If it is, tack
  * the option on.
@@ -1149,14 +1178,15 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			log_info("Discarding packet, missing required agent option.");
 			return 0;
 		}
-		/* Required Relay Agent option exists.
-		 * Fast forward to the end of Opt 82! */
+		/* Required Relay Agent option exists, but we need to add
+		 * suboption 11 to it.  Fast forward to the end of Opt 82! */
 		sp = op;
 		ep = ++sp;
 		len = *ep;
 		sp += len + 1;
+		*ep = len + 6; /* Length of suboption 11 */
 
-		goto opt82_ready;
+		goto add_subopt11;
 	}
 
 	/* If the packet was padded out, we can store the agent option
@@ -1216,6 +1246,9 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			  "on %s\n", remote_id_len, ip->name);
 	optlen += remote_id_len + 2;    /* RAI_REMOTE_ID + len */
 
+	/* Support for RFC5107 -- full DHCP proxy */
+	optlen += 6; 	/* RAI_SERVER_ID + len + 4 address bytes */
+
 	/* We do not support relay option fragmenting(multiple options to
 	 * support an option data exceeding 255 bytes).
 	 */
@@ -1247,6 +1280,9 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			memcpy(sp, remote_id, remote_id_len);
 			sp += remote_id_len;
 		}
+
+	add_subopt11:	/* RFC5107 */
+		sp += set_subopt11(ip, packet, sp);
 	} else {
 		++agent_option_errors;
 		log_error("No room in packet (used %d of %d) "
@@ -1256,7 +1292,6 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			   optlen + 3);
 	}
 
-	opt82_ready:
 	/*
 	 * Deposit an END option unless the packet is full (shouldn't
 	 * be possible).
