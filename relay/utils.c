@@ -33,6 +33,9 @@
 
 #include "utils.h"
 
+char exclude_ifaces[MAX_EXCLUDE_IFACES][IFNAMSIZ];
+int n_exclude_ifaces;
+
 #define ERR(fmt, ...) log_error("err: " fmt "\n", __VA_ARGS__)
 
 #define ASSERT_NO_ERR(_err) if (_err) {                                 \
@@ -100,6 +103,15 @@ static int register_interface_child (struct interface_info *owner, int ifindex) 
 	struct rtnl_link *link = rtnl_link_get (cache, ifindex);
 	char *child_name = rtnl_link_get_name (link);
 	if (child_name) {
+		for (i = 0; i < n_exclude_ifaces; i++)
+		{
+			if (!strncmp(child_name, exclude_ifaces[i], IFNAMSIZ))
+			{
+				log_info("Exclude child interface %s (parent %s).", child_name, owner->name);
+				goto err_free_cache;
+			}
+		}
+		log_info("Register iface %s with parent %s", child_name, owner->name);
 		child = find_iface(child_name);
 		if (!child) {
 			status = interface_allocate(&child, MDL);

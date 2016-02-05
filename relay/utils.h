@@ -25,6 +25,8 @@
 
 #include "dhcpd.h"
 
+#define MAX_EXCLUDE_IFACES 48
+
 int register_interface_children(struct interface_info *parent);
 
 int iface_mac (char *iface, unsigned char *addr);

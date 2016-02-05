@@ -98,6 +98,10 @@ u_int16_t server_port = 0;
 
 char *file_argv[255];
 
+#define MAX_EXCLUDE_IFACES 48
+char exclude_ifaces[MAX_EXCLUDE_IFACES][IFNAMSIZ];
+int n_exclude_ifaces;
+
 /* Relay agent server list. */
 struct server_list {
 	struct server_list *next;
@@ -154,6 +158,7 @@ static const char url[] =
 "Usage: dhcrelay [-d] [-q] [-a] [-D] [-A <length>] [-c <hops>] [-p <port>]\n" \
 "                [-m append|replace|forward|discard|require]\n" \
 "                [-i interface0 [ ... -i interfaceN]\n" \
+"                [-e interface0 [ ... -e interfaceN] - Exclude child interfaces to interfaces registered by -i.\n" \
 "                [-mp <iface>:<append|replace|forward|discard|require>]\n" \
 "                [-rid <iface>:<mac|ip|system-name>] - Use interface mac, interface IP or system/hostname as remote id for iface.\n" \
 "                [-cid <iface>:<cicuit-id>] - Hex value for circuit id, to be used for iface.\n" \
@@ -313,6 +318,11 @@ main(int argc_org, char **argv_org) {
 			interface_snorf(tmp, INTERFACE_REQUESTED);
 			register_interface_children(tmp);
 			interface_dereference(&tmp, MDL);
+ 		} else if (!strcmp(argv[i], "-e")) {
+			if (++i == argc) {
+				usage();
+			}
+			strcpy(exclude_ifaces[n_exclude_ifaces++], argv[i]);
 		} else if (!strcmp(argv[i], "-a")) {
 #ifdef DHCPv6
 			if (local_family_set && (local_family == AF_INET6)) {
