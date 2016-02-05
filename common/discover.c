@@ -1805,6 +1805,7 @@ void interface_snorf (struct interface_info *tmp, int ir)
 	memcpy (tmp -> circuit_id, tmp -> name, tmp -> circuit_id_len);
 	tmp -> remote_id[0] = '\0';
 	tmp -> remote_id_len = 0;
+	tmp -> relay_mode = global;
 	tmp -> flags = ir;
 	if (interfaces) {
 		interface_reference (&tmp -> next,

@@ -1114,12 +1114,24 @@ typedef enum rid_types{
 	rid_sys_name	/* The systems host name. */
 	} remote_id_types;
 
+	/* What to do about packets we're asked to relay that
+		already have a relay option: */
+typedef enum relay_mode{
+	forward_and_append,		/* Forward and append our own relay option. */
+	forward_and_replace,		/* Forward, but replace theirs with ours. */
+	forward_untouched,		/* Forward without changes. */
+	discard,
+	require,
+	global
+}relay_mode_types;
+
 struct interface_info {
 	OMAPI_OBJECT_PREAMBLE;
 	struct interface_info *next;	/* Next interface in list... */
 
 	struct interface_info *parent_ip;  /* Parent associated to this interface. */
 	int is_parent;
+	relay_mode_types relay_mode;
 
 	struct shared_network *shared_network;
 				/* Networks connected to this interface. */

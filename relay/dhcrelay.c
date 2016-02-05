@@ -90,13 +90,7 @@ isc_boolean_t use_if_id = ISC_FALSE;
 	/* Maximum size of a packet with agent options added. */
 int dhcp_max_agent_option_packet_length = DHCP_MTU_MIN;
 
-	/* What to do about packets we're asked to relay that
-	   already have a relay option: */
-enum { forward_and_append,	/* Forward and append our own relay option. */
-       forward_and_replace,	/* Forward, but replace theirs with ours. */
-       forward_untouched,	/* Forward without changes. */
-       discard,
-       require} agent_relay_mode = forward_and_replace;
+relay_mode_types agent_relay_mode = forward_and_replace;
 
 u_int16_t local_port;
 u_int16_t remote_port;
@@ -160,6 +154,7 @@ static const char url[] =
 "Usage: dhcrelay [-d] [-q] [-a] [-D] [-A <length>] [-c <hops>] [-p <port>]\n" \
 "                [-m append|replace|forward|discard|require]\n" \
 "                [-i interface0 [ ... -i interfaceN]\n" \
+"                [-mp <iface>:<append|replace|forward|discard|require>]\n" \
 "                [-rid <iface>:<mac|ip|system-name>] - Use interface mac, interface IP or system/hostname as remote id for iface.\n" \
 "                [-cid <iface>:<cicuit-id>] - Hex value for circuit id, to be used for iface.\n" \
 "                server0 [ ... serverN]\n\n"
@@ -364,6 +359,25 @@ main(int argc_org, char **argv_org) {
 				agent_relay_mode = discard;
 			} else if (!strcasecmp(argv[i], "require")) {
 				agent_relay_mode = require;
+			} else
+				usage();
+		} else if (!strcmp(argv[i], "-mp")) {
+			if (++i == argc)
+				usage();
+			strncpy (tokens, argv[i], 256);
+			char *tok = strtok(tokens, ":");
+			tmp = find_iface(tok);
+			tok = strtok(NULL, ":");
+			if (!strcasecmp(tok, "append")) {
+				tmp->relay_mode = forward_and_append;
+			} else if (!strcasecmp(tok, "replace")) {
+				tmp->relay_mode = forward_and_replace;
+			} else if (!strcasecmp(tok, "forward")) {
+				tmp->relay_mode = forward_untouched;
+			} else if (!strcasecmp(tok, "discard")) {
+				tmp->relay_mode = discard;
+			} else if (!strcasecmp(tok, "require")) {
+				tmp->relay_mode = require;
 			} else
 				usage();
 		} else if (!strcmp(argv[i], "-D")) {
@@ -1058,6 +1072,7 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 	u_int8_t *op, *nextop, *sp, *max, *end_pad = NULL;
 	u_int8_t remote_id[MAX_LEN_RID];
 	unsigned remote_id_len = 0;
+	relay_mode_types relay_mode = ip->relay_mode == global ? agent_relay_mode : ip->relay_mode;
 
 	/* If we're not adding agent options to packets, we can skip
 	   this. */
@@ -1131,20 +1146,19 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			   to do based on the mode the user specified. */
 			has_opt82 = 1;
 
-			switch(agent_relay_mode) {
-			      case forward_and_append:
-				goto skip;
-			      case forward_untouched:
-				return (length);
-			      case discard:
-				return (0);
-
-					case require: /* WeOS extension */
-				goto out;
-
-			      case forward_and_replace:
-			      default:
-				break;
+			switch (relay_mode)
+			{
+				case forward_and_append:
+					goto skip;
+				case forward_untouched:
+					return (length);
+				case discard:
+					return (0);
+				case require:
+					goto out;
+				case forward_and_replace:
+				default:
+					break;
 			}
 
 			/* Skip over the agent option and start copying
@@ -1182,7 +1196,7 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 
 	/* If agent option is required and we come here, the packet has no
 		agent option so drop it. */
-	if (agent_relay_mode == require) {
+	if (relay_mode == require) {
 		u_int8_t *ep, len;
 
 		if (!has_opt82) {
