@@ -1370,10 +1370,16 @@ isc_result_t got_one (h)
 	ip = (struct interface_info *)h;
 
       again:
-	if ((result =
-	     receive_packet (ip, u.packbuf, sizeof u, &from, &hfrom)) < 0) {
-		log_error ("receive_packet failed on %s: %m", ip -> name);
-		return ISC_R_UNEXPECTED;
+	if (!strcmp(ip->name, "fallback")) {
+		if ((result = receive_fallback (ip, u.packbuf, sizeof u, &from, &hfrom)) < 0) {
+			log_error("receive_packet failed on %s: %m", ip -> name);
+			return ISC_R_UNEXPECTED;
+		}
+	} else {
+		if ((result = receive_packet (ip, u.packbuf, sizeof u, &from, &hfrom)) < 0) {
+			log_error("receive_packet failed on %s: %m", ip -> name);
+			return ISC_R_UNEXPECTED;
+		}
 	}
 	if (result == 0)
 		return ISC_R_UNEXPECTED;

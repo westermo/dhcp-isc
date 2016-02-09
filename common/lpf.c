@@ -404,7 +404,7 @@ void maybe_setup_fallback ()
 		if_register_fallback (fbi);
 		status = omapi_register_io_object ((omapi_object_t *)fbi,
 						   if_readsocket, 0,
-						   fallback_discard, 0, 0);
+						   got_one, 0, 0);
 		if (status != ISC_R_SUCCESS)
 			log_fatal ("Can't register I/O handle for \"%s\": %s",
 				   fbi -> name, isc_result_totext (status));

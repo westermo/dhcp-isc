@@ -50,7 +50,10 @@
 #ifdef USE_SOCKET_FALLBACK
 # if !defined (USE_SOCKET_SEND)
 #  define if_register_send if_register_fallback
+#  define if_register_receive if_register_receive_fallback
+#  define if_deregister_receive if_deregister_receive_fallback
 #  define send_packet send_fallback
+#  define receive_packet receive_fallback
 #  define if_reinitialize_send if_reinitialize_fallback
 # endif
 #endif
@@ -220,6 +223,9 @@ if_register_socket(struct interface_info *info, int family,
 	}
 
 #if defined(SO_BINDTODEVICE)
+	log_debug ("Socket interface bound to address %s:%d iface %s",
+		   inet_ntoa (local_address), ntohs (local_port),
+		   info->ifp ? info->ifp->ifr_name : "NULL");
 	/* Bind this socket to this interface. */
 	if ((local_family != AF_INET6) && (info->ifp != NULL) &&
 	    setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE,
@@ -324,7 +330,7 @@ void if_deregister_send (info)
 #endif /* USE_SOCKET_SEND */
 #endif /* USE_SOCKET_SEND || USE_SOCKET_FALLBACK */
 
-#ifdef USE_SOCKET_RECEIVE
+#if defined(USE_SOCKET_RECEIVE) || defined (USE_SOCKET_FALLBACK)
 void if_register_receive (info)
 	struct interface_info *info;
 {
@@ -665,7 +671,7 @@ ssize_t send_packet6(struct interface_info *interface,
 }
 #endif /* DHCPv6 */
 
-#ifdef USE_SOCKET_RECEIVE
+#if defined(USE_SOCKET_RECEIVE) || defined (USE_SOCKET_FALLBACK)
 ssize_t receive_packet (interface, buf, len, from, hfrom)
 	struct interface_info *interface;
 	unsigned char *buf;
