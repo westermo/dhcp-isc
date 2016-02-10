@@ -97,6 +97,7 @@ enum { forward_and_append,	/* Forward and append our own relay option. */
 
 u_int16_t local_port;
 u_int16_t remote_port;
+char *file_argv[255];
 
 /* Relay agent server list. */
 struct server_list {
@@ -161,8 +162,35 @@ static void usage() {
 	log_fatal(DHCRELAY_USAGE);
 }
 
-int 
-main(int argc, char **argv) {
+int parse(FILE *f)
+{
+	char * line = NULL;
+	size_t len = 0;
+	ssize_t read;
+	int i = 0;
+	const char *name = "dhcrelay";
+	file_argv[i] = malloc(strlen(name) + 1);
+	strcpy(file_argv[i++], name);
+	while (i < 255 && (read = getline (&line, &len, f)) != -1)
+	{
+		char *tok = strtok(line, " \n");
+		while(tok)
+		{
+			if (strlen(tok) > 0)
+			{
+				file_argv[i] = malloc(strlen(tok) + 1); 
+				strcpy(file_argv[i++], tok);
+			}
+			tok = strtok(NULL, " \n");
+		}
+	}	
+	if (line)
+		free(line);
+	return i;
+}
+
+int
+main(int argc_org, char **argv_org) {
 	isc_result_t status;
 	struct servent *ent;
 	struct server_list *sp = NULL;
@@ -176,6 +204,20 @@ main(int argc, char **argv) {
 	struct stream_list *sl = NULL;
 	int local_family_set = 0;
 #endif
+	FILE *f = fopen("/etc/dhcrelay.conf", "r");
+	int argc;
+	char **argv;
+	if (f)
+	{
+		argc = parse(f);
+		argv = file_argv;
+		fclose(f);
+	}
+	else
+	{
+		argc = argc_org;
+		argv = argv_org;
+	}
 
 	/* Make sure that file descriptors 0(stdin), 1,(stdout), and
 	   2(stderr) are open. To do this, we assume that when we
