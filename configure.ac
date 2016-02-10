@@ -1,10 +1,11 @@
 AC_INIT([DHCP], [4.1.2], [dhcp-users@isc.org])
+AM_SILENT_RULES([yes])
 
 # we specify "foreign" to avoid having to have the GNU mandated files,
 # like AUTHORS, COPYING, and such
 AM_INIT_AUTOMAKE([foreign])
 
-# We want to turn on warnings if we are using gcc and the user did 
+# We want to turn on warnings if we are using gcc and the user did
 # not specify CFLAGS. The autoconf check for the C compiler sets the
 # CFLAGS if gcc is used, so we will save it before we run that check.
 SAVE_CFLAGS="$CFLAGS"
@@ -34,9 +35,9 @@ AC_PROG_RANLIB
 AC_CONFIG_HEADERS([includes/config.h])
 
 # we sometimes need to know byte order for building packets
-AC_C_BIGENDIAN(AC_SUBST(byte_order, BIG_ENDIAN), 
+AC_C_BIGENDIAN(AC_SUBST(byte_order, BIG_ENDIAN),
 	       AC_SUBST(byte_order, LITTLE_ENDIAN))
-AC_DEFINE_UNQUOTED([DHCP_BYTE_ORDER], [$byte_order], 
+AC_DEFINE_UNQUOTED([DHCP_BYTE_ORDER], [$byte_order],
 		   [Define to BIG_ENDIAN for MSB (Motorola or SPARC CPUs)
 		    or LITTLE_ENDIAN for LSB (Intel CPUs).])
 
@@ -116,7 +117,7 @@ AC_ARG_ENABLE(dhcpv6,
 		       [enable support for DHCPv6 (default is yes)]))
 # DHCPv6 is on by default, so define if it is not explicitly disabled.
 if test "$enable_dhcpv6" != "no"; then
-	AC_DEFINE([DHCPv6], [1], 
+	AC_DEFINE([DHCPv6], [1],
 		  [Define to 1 to include DHCPv6 support.])
 fi
 
@@ -165,7 +166,7 @@ esac
 # Allow specification of alternate state files
 AC_ARG_WITH(srv-lease-file,
 	AC_HELP_STRING([--with-srv-lease-file=PATH],
-		       [File for dhcpd leases 
+		       [File for dhcpd leases
 		        (default is LOCALSTATEDIR/db/dhcpd.leases)]),
 	AC_DEFINE_UNQUOTED([_PATH_DHCPD_DB], ["$withval"],
 			   [File for dhcpd leases.]))
@@ -196,7 +197,7 @@ echo "$with_srv_lease_file"
 
 AC_ARG_WITH(srv6-lease-file,
 	AC_HELP_STRING([--with-srv6-lease-file=PATH],
-		       [File for dhcpd6 leases 
+		       [File for dhcpd6 leases
 		        (default is LOCALSTATEDIR/db/dhcpd6.leases)]),
 	AC_DEFINE_UNQUOTED([_PATH_DHCPD6_DB], ["$withval"],
 			   [File for dhcpd6 leases.]))
@@ -227,7 +228,7 @@ echo "$with_srv6_lease_file"
 
 AC_ARG_WITH(cli-lease-file,
 	AC_HELP_STRING([--with-cli-lease-file=PATH],
-		       [File for dhclient leases 
+		       [File for dhclient leases
 		        (default is LOCALSTATEDIR/db/dhclient.leases)]),
 	AC_DEFINE_UNQUOTED([_PATH_DHCLIENT_DB], ["$withval"],
 			   [File for dhclient leases.]))
@@ -258,7 +259,7 @@ echo "$with_cli_lease_file"
 
 AC_ARG_WITH(cli6-lease-file,
 	AC_HELP_STRING([--with-cli6-lease-file=PATH],
-		       [File for dhclient6 leases 
+		       [File for dhclient6 leases
 		        (default is LOCALSTATEDIR/db/dhclient6.leases)]),
 	AC_DEFINE_UNQUOTED([_PATH_DHCLIENT6_DB], ["$withval"],
 			   [File for dhclient6 leases.]))
@@ -360,20 +361,20 @@ AC_CHECK_HEADER(linux/filter.h, DO_LPF=1, ,
 ])
 if test -n "$DO_LPF"
 then
-	AC_DEFINE([HAVE_LPF], [1], 
+	AC_DEFINE([HAVE_LPF], [1],
 		  [Define to 1 to use the Linux Packet Filter interface code.])
 else
 	AC_CHECK_HEADER(sys/dlpi.h, DO_DLPI=1)
 	if test -n "$DO_DLPI"
 	then
-		AC_DEFINE([HAVE_DLPI], [1], 
+		AC_DEFINE([HAVE_DLPI], [1],
 			  [Define to 1 to use DLPI interface code.])
 	else
 		AC_CHECK_HEADER(net/bpf.h, DO_BPF=1)
 		if test -n "$DO_BPF"
 		then
 			AC_DEFINE([HAVE_BPF], [""],
-	  			  [Define to 1 to use the 
+	  			  [Define to 1 to use the
 				   Berkeley Packet Filter interface code.])
 		fi
 	fi
@@ -433,8 +434,8 @@ AC_SEARCH_LIBS(MD5Init, [crypto])
 AC_SEARCH_LIBS(socket, [socket])
 AC_SEARCH_LIBS(inet_ntoa, [nsl])
 
-AC_SEARCH_LIBS(inet_aton, [socket nsl], , 
-	AC_DEFINE([NEED_INET_ATON], [1], 
+AC_SEARCH_LIBS(inet_aton, [socket nsl], ,
+	AC_DEFINE([NEED_INET_ATON], [1],
 		  [Define to 1 if the inet_aton() function is missing.]))
 
 # Check for a standalone regex library.
@@ -443,14 +444,11 @@ AC_SEARCH_LIBS(regcomp, [regex])
 # For HP/UX we need -lipv6 for if_nametoindex, perhaps others.
 AC_SEARCH_LIBS(if_nametoindex, [ipv6])
 
-# check for /dev/random (declares HAVE_DEV_RANDOM)
-AC_CHECK_FILE(/dev/random,
-	AC_DEFINE([HAVE_DEV_RANDOM], [1], 
-		  [Define to 1 if you have the /dev/random file.]))
+AC_DEFINE([HAVE_DEV_RANDOM], [1], [Define to 1 if you have the /dev/random file.])
 
 # see if there is a "sa_len" field in our interface information structure
 AC_CHECK_MEMBER(struct sockaddr.sa_len,
-	AC_DEFINE([HAVE_SA_LEN], [], 
+	AC_DEFINE([HAVE_SA_LEN], [],
 		  [Define to 1 if the sockaddr structure has a length field.]),
 	,
 	[#include <sys/socket.h>])
@@ -461,13 +459,13 @@ AC_CHECK_SIZEOF(struct iaddr *, , [
 #include <stdio.h>
 ])
 
-# Solaris does not have the msg_control or msg_controlen members in 
+# Solaris does not have the msg_control or msg_controlen members in
 # in the msghdr structure unless you define:
 #
 #   _XOPEN_SOURCE, _XOPEN_SOURCE_EXTENDED, and __EXTENSIONS__
-# 
+#
 # See the "standards" man page for details.
-# 
+#
 # We check for the msg_control member, and if it is not found, we check
 # again with the appropriate defines added to the CFLAGS. (In order to
 # do this we have to remove the check from the cache, which is what the
@@ -477,7 +475,7 @@ AC_CHECK_MEMBER(struct msghdr.msg_control,,
 	 CFLAGS="$CFLAGS -D__EXTENSIONS__"
 	 unset ac_cv_member_struct_msghdr_msg_control
 	 AC_CHECK_MEMBER(struct msghdr.msg_control,,
-	 	[AC_MSG_ERROR([Missing msg_control member in 
+	 	[AC_MSG_ERROR([Missing msg_control member in
 			       msg_control structure.])],
 		[
 #include <sys/types.h>
