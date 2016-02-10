@@ -36,6 +36,8 @@
 #include <syslog.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <limits.h>
+#include <net/ethernet.h>
 
 #include "utils.h"
 
@@ -155,6 +157,7 @@ static const char url[] =
 "Usage: dhcrelay [-d] [-q] [-a] [-D] [-A <length>] [-c <hops>] [-p <port>]\n" \
 "                [-m append|replace|forward|discard]\n" \
 "                [-i interface0 [ ... -i interfaceN]\n" \
+"                [-rid <iface>:<mac|ip|system-name>] - Use interface mac, interface IP or system/hostname as remote id for iface.\n" \
 "                server0 [ ... serverN]\n\n"
 #endif
 
@@ -200,6 +203,7 @@ main(int argc_org, char **argv_org) {
 	int no_daemon = 0, quiet = 0;
 	int fd;
 	int i;
+	char tokens[256];
 #ifdef DHCPv6
 	struct stream_list *sl = NULL;
 	int local_family_set = 0;
@@ -398,6 +402,24 @@ main(int argc_org, char **argv_org) {
 			sl->next = upstreams;
 			upstreams = sl;
 #endif
+		} else if (!strcmp(argv[i], "-rid")) {
+			if (++i == argc) {
+				usage();
+			}
+			strncpy (tokens, argv[i], 256);
+			char *tok = strtok(tokens, ":");
+			tmp = find_iface(tok);			
+			tok = strtok(NULL, ":");
+			if (!strcasecmp(tok, "ip")) {
+				tmp->remote_id_type = rid_ip;
+			} else if (!strcasecmp(tok, "mac")) {
+				tmp->remote_id_type = rid_mac;
+			} else if (!strcasecmp(tok, "system-name")) {
+				tmp->remote_id_type = rid_sys_name;
+			} else
+			{
+				usage();
+			}
 		} else if (!strcmp(argv[i], "--version")) {
 			log_info("isc-dhcrelay-%s", PACKAGE_VERSION);
 			exit(0);
@@ -970,6 +992,8 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 	int is_dhcp = 0, mms;
 	unsigned optlen;
 	u_int8_t *op, *nextop, *sp, *max, *end_pad = NULL;
+	u_int8_t remote_id[MAX_LEN_RID];
+	unsigned remote_id_len = 0;
 
 	/* If we're not adding agent options to packets, we can skip
 	   this. */
@@ -1103,12 +1127,46 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 			  "%s\n", ip->circuit_id_len, ip->name);
 	optlen = ip->circuit_id_len + 2;            /* RAI_CIRCUIT_ID + len */
 
-	if (ip->remote_id) {
-		if (ip->remote_id_len > 255 || ip->remote_id_len < 1)
-			log_fatal("Remote ID length %d out of range [1-255] "
-				  "on %s\n", ip->circuit_id_len, ip->name);
-		optlen += ip->remote_id_len + 2;    /* RAI_REMOTE_ID + len */
+	struct interface_info *r_ip = ip;
+	if (ip->parent_ip)
+	{
+		r_ip = ip->parent_ip;
 	}
+
+	if (r_ip->remote_id_type == rid_mac)
+	{
+		unsigned char mac_addr[ETHER_ADDR_LEN];
+		iface_mac(r_ip->name, mac_addr);
+		memcpy(remote_id, mac_addr, ETHER_ADDR_LEN);
+		remote_id_len = ETHER_ADDR_LEN;
+	}
+	else if (r_ip->remote_id_type == rid_ip)
+	{
+		char ip_addr[100];
+		int n_ip = iface_ip(r_ip->name);
+		sys_inet_ntop(n_ip, ip_addr, 100);
+		memcpy(remote_id, ip_addr, strlen(ip_addr));
+		remote_id_len = strlen(ip_addr);
+	}
+	else if (r_ip->remote_id_type == rid_sys_name)
+	{
+		char hostname[HOST_NAME_MAX];
+		gethostname (hostname, HOST_NAME_MAX);
+		int len = strlen (hostname) > HOST_NAME_MAX ? HOST_NAME_MAX : strlen (hostname);
+		memcpy (remote_id, hostname, len);
+		remote_id_len = len;
+
+	}
+	else if (r_ip && r_ip->remote_id_len > 0)
+	{
+		memcpy(remote_id, r_ip->remote_id, r_ip->remote_id_len);
+		remote_id_len = r_ip->remote_id_len;
+	}
+
+	if (remote_id_len > 255 || remote_id_len < 1)
+		log_fatal("Remote ID length %d out of range [1-255] "
+			  "on %s\n", remote_id_len, ip->name);
+	optlen += remote_id_len + 2;    /* RAI_REMOTE_ID + len */
 
 	/* We do not support relay option fragmenting(multiple options to
 	 * support an option data exceeding 255 bytes).
@@ -1135,11 +1193,11 @@ add_relay_agent_options(struct interface_info *ip, struct dhcp_packet *packet,
 		sp += ip->circuit_id_len;
 
 		/* Copy in remote ID... */
-		if (ip->remote_id) {
+		if (remote_id_len > 0) {
 			*sp++ = RAI_REMOTE_ID;
-			*sp++ = ip->remote_id_len;
-			memcpy(sp, ip->remote_id, ip->remote_id_len);
-			sp += ip->remote_id_len;
+			*sp++ = remote_id_len;
+			memcpy(sp, remote_id, remote_id_len);
+			sp += remote_id_len;
 		}
 	} else {
 		++agent_option_errors;

@@ -1802,7 +1802,7 @@ void interface_snorf (struct interface_info *tmp, int ir)
 {
 	tmp -> circuit_id = (u_int8_t *)tmp -> name;
 	tmp -> circuit_id_len = strlen (tmp -> name);
-	tmp -> remote_id = 0;
+	tmp -> remote_id[0] = '\0';
 	tmp -> remote_id_len = 0;
 	tmp -> flags = ir;
 	if (interfaces) {

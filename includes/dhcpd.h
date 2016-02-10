@@ -1105,6 +1105,13 @@ struct dns_update_state {
 };
 
 /* Information about each network interface. */
+#define MAX_LEN_RID 64
+
+typedef enum rid_types{
+	rid_mac,		/* MAC address of interface. */
+	rid_ip,		/* IPv4 address of interface. */
+	rid_sys_name	/* The systems host name. */
+	} remote_id_types;
 
 struct interface_info {
 	OMAPI_OBJECT_PREAMBLE;
@@ -1132,7 +1139,10 @@ struct interface_info {
 					   interface. */
 	unsigned circuit_id_len;	/* Length of Circuit ID, if there
 					   is one. */
-	u_int8_t *remote_id;		/* Remote ID associated with this
+
+	remote_id_types remote_id_type;
+
+	u_int8_t remote_id[MAX_LEN_RID];	/* Remote ID associated with this
 					   interface (if any). */
 	unsigned remote_id_len;		/* Length of Remote ID. */
 
