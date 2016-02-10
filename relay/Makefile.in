@@ -90,7 +90,7 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(man8dir)"
 PROGRAMS = $(sbin_PROGRAMS)
-am_dhcrelay_OBJECTS = dhcrelay.$(OBJEXT)
+am_dhcrelay_OBJECTS = dhcrelay.$(OBJEXT) utils.$(OBJEXT)
 dhcrelay_OBJECTS = $(am_dhcrelay_OBJECTS)
 dhcrelay_DEPENDENCIES = ../common/libdhcp.a ../omapip/libomapi.a \
 	../dst/libdst.a ../minires/libres.a

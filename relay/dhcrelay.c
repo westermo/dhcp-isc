@@ -37,6 +37,8 @@
 #include <sys/time.h>
 #include <signal.h>
 
+#include "utils.h"
+
 TIME default_lease_time = 43200; /* 12 hours... */
 TIME max_lease_time = 86400; /* 24 hours... */
 struct tree_cache *global_options[256];
@@ -264,6 +266,7 @@ main(int argc, char **argv) {
 			}
 			strcpy(tmp->name, argv[i]);
 			interface_snorf(tmp, INTERFACE_REQUESTED);
+			register_interface_children(tmp);
 			interface_dereference(&tmp, MDL);
 		} else if (!strcmp(argv[i], "-a")) {
 #ifdef DHCPv6
@@ -569,6 +572,26 @@ do_relay4(struct interface_info *ip, struct dhcp_packet *packet,
 	struct sockaddr_in to;
 	struct interface_info *out;
 	struct hardware hto, *htop;
+	struct in_addr client_if_address = {.s_addr = 0};
+	char *tmp_iface_name = ip->parent_ip ? ip->parent_ip->name : ip->name;
+	if (strcmp("fallback", tmp_iface_name))
+	{
+		if (!get_ip_address(tmp_iface_name, &client_if_address)
+					&& client_if_address.s_addr != 0)
+		{
+			if (client_if_address.s_addr != ip->addresses[0].s_addr)
+			{
+				ip->addresses[0] = client_if_address;
+				log_info("Interface %s re-associated to address %s via interface %s.",
+							ip->name, int_to_addr(client_if_address.s_addr), tmp_iface_name);
+			}
+		}
+		else
+		{
+			log_info("Could not find address for interface %s.", ip->name);
+			return;
+		}
+	}
 
 	if (packet->hlen > sizeof packet->chaddr) {
 		log_info("Discarding packet with invalid hlen.");
@@ -628,6 +651,9 @@ do_relay4(struct interface_info *ip, struct dhcp_packet *packet,
 		      strip_relay_agent_options(ip, &out, packet, length)))
 			return;
 
+		if (out->parent_ip)
+			out = out->parent_ip;
+
 		if (!out) {
 			log_error("Packet to bogus giaddr %s.\n",
 			      inet_ntoa(packet->giaddr));
@@ -653,6 +679,11 @@ do_relay4(struct interface_info *ip, struct dhcp_packet *packet,
 	   we just sent it. */
 	if (out)
 		return;
+	if (ip->is_parent)
+	{
+		log_debug("Dropped frame ingressing on interface %s which has children.", ip->name);
+		return;
+	}
 
 	/* Add relay agent options if indicated.   If something goes wrong,
 	   drop the packet. */

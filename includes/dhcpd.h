@@ -32,6 +32,9 @@
  * ``http://www.nominum.com''.
  */
 
+#ifndef __CFG_DHCPD_H__
+#define __CFG_DHCPD_H__
+
 #include "config.h"
 
 #ifndef __CYGWIN32__
@@ -1106,6 +1109,10 @@ struct dns_update_state {
 struct interface_info {
 	OMAPI_OBJECT_PREAMBLE;
 	struct interface_info *next;	/* Next interface in list... */
+
+	struct interface_info *parent_ip;  /* Parent associated to this interface. */
+	int is_parent;
+
 	struct shared_network *shared_network;
 				/* Networks connected to this interface. */
 	struct hardware hw_address;	/* Its physical address. */
@@ -3319,3 +3326,4 @@ void mark_hosts_unavailable(void);
 void mark_phosts_unavailable(void);
 void mark_interfaces_unavailable(void);
 
+#endif
