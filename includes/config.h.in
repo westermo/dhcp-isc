@@ -58,6 +58,9 @@
 /* Define to 1 if you have the <memory.h> header file. */
 #undef HAVE_MEMORY_H
 
+/* Define to 1 if you have the <netlink/netlink.h> header file. */
+#undef HAVE_NETLINK_NETLINK_H
+
 /* Define to 1 if you have the <net/if6.h> header file. */
 #undef HAVE_NET_IF6_H
 
