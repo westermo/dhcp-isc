@@ -182,6 +182,8 @@ int parse(FILE *f)
 	strcpy(file_argv[i++], name);
 	while (i < 255 && (read = getline (&line, &len, f)) != -1)
 	{
+		if (!line || !strlen(line) || line[0] == '#')
+			continue;
 		char *tok = strtok(line, " \n");
 		while(tok)
 		{
