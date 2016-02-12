@@ -997,6 +997,9 @@ strip_relay_agent_options(struct interface_info *in,
 			return (0);
 	}
 
+	/* Clear GIADDR field when sending to client */
+	memset (&packet->giaddr, 0, sizeof(struct in_addr));
+
 	/* Adjust the length... */
 	if (sp != op) {
 		length = sp -((u_int8_t *)packet);
