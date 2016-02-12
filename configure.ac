@@ -434,6 +434,9 @@ AC_CHECK_HEADERS(netlink/netlink.h, [], AC_MSG_ERROR([Unable to find netlink hea
 AC_SEARCH_LIBS(nl_socket_alloc, [nl-3], , AC_MSG_ERROR([Unable to find libnl-3.so library]))
 AC_SEARCH_LIBS(rtnl_link_alloc_cache, [nl-route-3], , AC_MSG_ERROR([Unable to find libnl-route-3.so library]))
 
+AC_CHECK_HEADERS(confuse.h, [], AC_MSG_ERROR([Unable to find libconfuse header files.]))
+AC_SEARCH_LIBS(cfg_parse, [confuse], , AC_MSG_ERROR([Unable to find lconfuse.so library]))
+
 # Solaris needs some libraries for functions
 AC_SEARCH_LIBS(socket, [socket])
 AC_SEARCH_LIBS(inet_ntoa, [nsl])
