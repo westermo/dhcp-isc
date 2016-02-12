@@ -1807,7 +1807,7 @@ void interface_stash (struct interface_info *tptr)
 }
 
 
-static char *iface_if_alias (char *ifname)
+static const char *iface_if_alias (char *ifname)
 {
    struct nl_sock *sk;
    struct nl_cache *cache;
@@ -1816,7 +1816,7 @@ static char *iface_if_alias (char *ifname)
 
    sk = nl_socket_alloc ();
    if (!sk)
-      return -ENOMEM;
+      return NULL;
 
    err = nl_connect (sk, NETLINK_ROUTE);
    if (err)
@@ -1824,7 +1824,7 @@ static char *iface_if_alias (char *ifname)
    err = rtnl_link_get_kernel (sk, 0, ifname, &link);
    if (err)
       goto free_sk;
-   char * alias = rtnl_link_get_ifalias (link);
+   const char * alias = rtnl_link_get_ifalias (link);
 
    free_sk: nl_socket_free (sk);
    return alias;
@@ -1832,7 +1832,7 @@ static char *iface_if_alias (char *ifname)
 
 void interface_snorf (struct interface_info *tmp, int ir)
 {
-	char *alias = iface_if_alias(tmp->name);
+	const char *alias = iface_if_alias(tmp->name);
 	memset(tmp -> circuit_id, 0, MAX_LEN_CID);
 	if (alias) {
 		tmp->circuit_id_len = strlen (alias);
