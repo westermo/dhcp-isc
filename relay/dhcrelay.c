@@ -40,6 +40,9 @@
 #include <net/ethernet.h>
 
 #include "utils.h"
+#include <confuse.h>
+
+#define CFG_FILENAME "/etc/dhcrelay.conf"
 
 TIME default_lease_time = 43200; /* 12 hours... */
 TIME max_lease_time = 86400; /* 24 hours... */
@@ -54,6 +57,8 @@ char *token_line;
 char *tlname;
 
 const char *path_dhcrelay_pid = _PATH_DHCRELAY_PID;
+
+int no_daemon = 0, quiet = 0;
 
 int bogus_agent_drops = 0;	/* Packets dropped because agent option
 				   field was specified and we're not relaying
@@ -96,8 +101,6 @@ u_int16_t local_port;
 u_int16_t remote_port;
 u_int16_t server_port = 0;
 u_int16_t force_server_id = 0;
-
-char *file_argv[255];
 
 #define MAX_EXCLUDE_IFACES 48
 char exclude_ifaces[MAX_EXCLUDE_IFACES][IFNAMSIZ];
@@ -160,10 +163,6 @@ static const char url[] =
 "Usage: dhcrelay [-d] [-q] [-a] [-D] [-A <length>] [-c <hops>] [-p <port>]\n" \
 "                [-m append|replace|forward|discard|require]\n" \
 "                [-i interface0 [ ... -i interfaceN]\n" \
-"                [-e interface0 [ ... -e interfaceN] - Exclude child interfaces to interfaces registered by -i.\n" \
-"                [-mp <iface>:<append|replace|forward|discard|require>]\n" \
-"                [-rid <iface>:<mac|ip|system-name>] - Use interface mac, interface IP or system/hostname as remote id for iface.\n" \
-"                [-cid <iface>:<cicuit-id>] - Hex value for circuit id, to be used for iface.\n" \
 "                server0 [ ... serverN]\n\n"
 #endif
 
@@ -171,65 +170,243 @@ static void usage() {
 	log_fatal(DHCRELAY_USAGE);
 }
 
-int parse(FILE *f)
-{
-	char * line = NULL;
-	size_t len = 0;
-	ssize_t read;
-	int i = 0;
-	const char *name = "dhcrelay";
-	file_argv[i] = malloc(strlen(name) + 1);
-	strcpy(file_argv[i++], name);
-	while (i < 255 && (read = getline (&line, &len, f)) != -1)
-	{
-		if (!line || !strlen(line) || line[0] == '#')
-			continue;
-		char *tok = strtok(line, " \n");
-		while(tok)
-		{
-			if (strlen(tok) > 0)
-			{
-				file_argv[i] = malloc(strlen(tok) + 1);
-				strcpy(file_argv[i++], tok);
-			}
-			tok = strtok(NULL, " \n");
-		}
-	}
-	if (line)
-		free(line);
-	return i;
+static void set_quiet () {
+	quiet = 1;
+	quiet_interface_discovery = 1;
 }
 
+static void set_add_agent_options () {
+	add_agent_options = 1;
+}
+
+static int set_agent_relay_mode (const char *value) {
+	if (!strcasecmp (value, "append")) {
+		agent_relay_mode = forward_and_append;
+	}
+	else if (!strcasecmp (value, "replace")) {
+		agent_relay_mode = forward_and_replace;
+	}
+	else if (!strcasecmp (value, "forward")) {
+		agent_relay_mode = forward_untouched;
+	}
+	else if (!strcasecmp (value, "discard")) {
+		agent_relay_mode = discard;
+	}
+	else if (!strcasecmp (value, "require")) {
+		agent_relay_mode = require;
+	}
+	else
+		return -1;
+	return 0;
+}
+
+void set_server_port (char *port_str) {
+	server_port = validate_port (port_str);
+	log_debug ("Using server port %d", ntohs (server_port));
+}
+
+void set_force_server_id () {
+	force_server_id = 1;
+	log_debug ("Enabling force Server Identity.");
+}
+
+void create_interface (const char *iface_name) {
+	struct interface_info *tmp = NULL;
+	isc_result_t status;
+	status = interface_allocate (&tmp, MDL);
+	if (status != ISC_R_SUCCESS)
+		log_fatal ("%s: interface_allocate: %s", iface_name, isc_result_totext (status));
+	strcpy (tmp->name, iface_name);
+	interface_snorf (tmp, INTERFACE_REQUESTED);
+	register_interface_children (tmp);
+	interface_dereference (&tmp, MDL);
+}
+
+int set_rid (const char *iface_name, const char *rid_str) {
+	struct interface_info *tmp = find_iface (iface_name);
+	if (!tmp)
+		return -1;
+	if (!strcasecmp (rid_str, "ip")) {
+		tmp->remote_id_type = rid_ip;
+	}
+	else if (!strcasecmp (rid_str, "mac")) {
+		tmp->remote_id_type = rid_mac;
+	}
+	else if (!strcasecmp (rid_str, "system-name")) {
+		tmp->remote_id_type = rid_sys_name;
+	}
+	else
+		return -1;
+	return 0;
+}
+
+int set_iface_relay_mode (const char *iface_name, const char *mode_str) {
+	struct interface_info *tmp = find_iface (iface_name);
+	if (!tmp)
+		return -1;
+	if (!strcasecmp (mode_str, "append")) {
+		tmp->relay_mode = forward_and_append;
+	}
+	else if (!strcasecmp (mode_str, "replace")) {
+		tmp->relay_mode = forward_and_replace;
+	}
+	else if (!strcasecmp (mode_str, "forward")) {
+		tmp->relay_mode = forward_untouched;
+	}
+	else if (!strcasecmp (mode_str, "discard")) {
+		tmp->relay_mode = discard;
+	}
+	else if (!strcasecmp (mode_str, "require")) {
+		tmp->relay_mode = require;
+	}
+	else
+		return -1;
+	return 0;
+}
+
+int set_iface_cid (const char *iface_name, char *cid_str) {
+	struct interface_info *tmp = find_iface (iface_name);
+	if (!tmp)
+		return -1;
+	tmp->circuit_id_len = hex2buf (cid_str, &tmp->circuit_id[0], MAX_LEN_CID);
+	if (tmp->circuit_id_len < 1)
+		return -1;
+	return 0;
+}
+
+void add_server (const char *srv_str) {
+	struct server_list *sp = NULL;
+	struct hostent *he;
+	struct in_addr ia, *iap = NULL;
+
+#ifdef DHCPv6
+	if (local_family_set && (local_family == AF_INET6)) {
+		usage ();
+	}
+	local_family_set = 1;
+	local_family = AF_INET;
+#endif
+	if (inet_aton (srv_str, &ia)) {
+		iap = &ia;
+	}
+	else {
+		he = gethostbyname (srv_str);
+		if (!he) {
+			log_error ("%s: host unknown", srv_str);
+		}
+		else {
+			iap = ((struct in_addr *) he->h_addr_list[0]);
+		}
+	}
+
+	if (iap) {
+		sp = ((struct server_list *) dmalloc (sizeof *sp, MDL));
+		if (!sp)
+			log_fatal ("no memory for server.\n");
+		sp->next = servers;
+		servers = sp;
+		memcpy (&sp->to.sin_addr, iap, sizeof *iap);
+	}
+}
+
+/*
+ * Return -1 on fail, 0 on success, 1 if no file found.
+ */
+int config_parse () {
+	int i, j;
+	char *token;
+
+	struct cfg_opt_t port_opts[] = {
+				CFG_BOOL ("exclude", 0, CFGF_NONE),
+				CFG_STR ("option82-mode", "", CFGF_NONE),
+				CFG_STR ("circuit-id", "", CFGF_NONE), CFG_END ()
+	};
+
+	struct cfg_opt_t group_opts[] = {
+				CFG_STR ("iface", "", CFGF_NONE),
+				CFG_STR ("remote-id", "", CFGF_NONE),
+				CFG_SEC ("port", port_opts, CFGF_TITLE | CFGF_MULTI), CFG_END ()
+	};
+
+	struct cfg_opt_t opts[] = {
+				CFG_STR ("option82-mode", "forward", CFGF_NONE),
+				CFG_BOOL ("option82-agent-options", 0, CFGF_NONE),
+				CFG_BOOL ("force-server-identity", 0, CFGF_NONE),
+				CFG_SEC ("group", group_opts, CFGF_TITLE | CFGF_MULTI),
+				CFG_STR_LIST ("server", "{}", CFGF_NONE), CFG_END ()
+	};
+	struct cfg_t *cfg = cfg_init (opts, CFGF_NONE), *cfg_group, *cfg_port;
+
+	switch (cfg_parse (cfg, CFG_FILENAME))
+	{
+		case CFG_FILE_ERROR:
+			return 1;
+
+		case CFG_PARSE_ERROR:
+			log_info ("Parse error reading configuration file %s\n", strerror (errno));
+			return -1;
+
+		case CFG_SUCCESS:
+			if (strlen (cfg_getstr (cfg, "option82-mode")) > 0)
+				set_agent_relay_mode (cfg_getstr (cfg, "option82-mode"));
+
+			if (cfg_getbool (cfg, "option82-agent-options"))
+				set_add_agent_options ();
+
+			if (cfg_getbool (cfg, "force-server-identity"))
+				set_force_server_id ();
+
+			for (i = 0; i < cfg_size (cfg, "group"); i++) {
+				cfg_group = cfg_getnsec (cfg, "group", i);
+				for (j = 0; j < cfg_size (cfg_group, "port"); j++) {
+					cfg_port = cfg_getnsec (cfg_group, "port", j);
+					if (cfg_getbool (cfg_port, "exclude"))
+						strcpy (exclude_ifaces[n_exclude_ifaces++], cfg_title (cfg_port));
+				}
+				create_interface (cfg_getstr (cfg_group, "iface"));
+				set_rid (cfg_title (cfg_group), cfg_getstr (cfg_group, "remote-id"));
+				for (j = 0; j < cfg_size (cfg_group, "port"); j++) {
+					cfg_port = cfg_getnsec (cfg_group, "port", j);
+					if (strlen (cfg_getstr (cfg_port, "option82-mode")) > 0)
+						set_iface_relay_mode (cfg_title (cfg_port), cfg_getstr (cfg_port, "option82-mode"));
+					if (strlen (cfg_getstr (cfg_port, "circuit-id")) > 0)
+						set_iface_cid (cfg_title (cfg_port), cfg_getstr (cfg_port, "circuit-id"));
+				}
+			}
+
+			for (i = 0; i < cfg_size (cfg, "server"); i++) {
+				char *server;
+				if (strchr(cfg_getnstr (cfg, "server", i), ':'))
+				{
+					server = strtok(cfg_getnstr (cfg, "server", i), ":");
+					char *port = strtok(NULL, ":");
+					set_server_port (port);
+				}
+				else
+					server = cfg_getnstr (cfg, "server", i);
+				add_server (server);
+			}
+			break;
+	}
+	cfg_free (cfg);
+	return 0;
+}
+
+
 int
-main(int argc_org, char **argv_org) {
+main(int argc, char **argv) {
 	isc_result_t status;
 	struct servent *ent;
 	struct server_list *sp = NULL;
 	struct interface_info *tmp = NULL;
 	char *service_local = NULL, *service_remote = NULL;
 	u_int16_t port_local = 0, port_remote = 0;
-	int no_daemon = 0, quiet = 0;
 	int fd;
 	int i;
-	char tokens[256];
 #ifdef DHCPv6
 	struct stream_list *sl = NULL;
 	int local_family_set = 0;
 #endif
-	FILE *f = fopen("/etc/dhcrelay.conf", "r");
-	int argc;
-	char **argv;
-	if (f)
-	{
-		argc = parse(f);
-		argv = file_argv;
-		fclose(f);
-	}
-	else
-	{
-		argc = argc_org;
-		argv = argv_org;
-	}
 
 	/* Make sure that file descriptors 0(stdin), 1,(stdout), and
 	   2(stderr) are open. To do this, we assume that when we
@@ -267,6 +444,33 @@ main(int argc_org, char **argv_org) {
 	/* Set up the OMAPI wrappers for the interface object. */
 	interface_setup();
 
+
+	int file_parse_result = config_parse();
+	if (!file_parse_result) {
+		for (i = 1; i < argc; i++) {
+			if (!strcmp (argv[i], "-d")) {
+				no_daemon = 1;
+			}
+			else if (!strcmp (argv[i], "-q")) {
+				set_quiet (1);
+			}
+			else if (!strcmp (argv[i], "--version")) {
+				log_info ("isc-dhcrelay-%s", PACKAGE_VERSION);
+				exit (0);
+			}
+			else if (!strcmp (argv[i], "--help") || !strcmp (argv[i], "-h")) {
+				log_info (DHCRELAY_USAGE);
+				exit (0);
+			}
+		}
+		goto setup;
+	}
+	else if (file_parse_result < 0){
+		log_error("Invalid configuration file.");
+		exit(0);
+	}
+
+
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-4")) {
 #ifdef DHCPv6
@@ -285,18 +489,13 @@ main(int argc_org, char **argv_org) {
 		} else if (!strcmp(argv[i], "-d")) {
 			no_daemon = 1;
 		} else if (!strcmp(argv[i], "-q")) {
-			quiet = 1;
-			quiet_interface_discovery = 1;
+			set_quiet(1);
 		} else if (!strcmp(argv[i], "-p")) {
 			if (++i == argc)
 				usage();
 			local_port = validate_port(argv[i]);
 			log_debug("binding to user-specified port %d",
 				  ntohs(local_port));
-		} else if (!strcmp(argv[i], "-f")) {
-			force_server_id = 1;
-			log_debug("Enabling force Server Identity.");
-
 		} else if (!strcmp(argv[i], "-c")) {
 			int hcount;
 			if (++i == argc)
@@ -314,23 +513,10 @@ main(int argc_org, char **argv_org) {
 			local_family_set = 1;
 			local_family = AF_INET;
 #endif
-			status = interface_allocate(&tmp, MDL);
-			if (status != ISC_R_SUCCESS)
-				log_fatal("%s: interface_allocate: %s",
-					  argv[i],
-					  isc_result_totext(status));
 			if (++i == argc) {
 				usage();
 			}
-			strcpy(tmp->name, argv[i]);
-			interface_snorf(tmp, INTERFACE_REQUESTED);
-			register_interface_children(tmp);
-			interface_dereference(&tmp, MDL);
- 		} else if (!strcmp(argv[i], "-e")) {
-			if (++i == argc) {
-				usage();
-			}
-			strcpy(exclude_ifaces[n_exclude_ifaces++], argv[i]);
+			create_interface(argv[i]);
 		} else if (!strcmp(argv[i], "-a")) {
 #ifdef DHCPv6
 			if (local_family_set && (local_family == AF_INET6)) {
@@ -339,7 +525,7 @@ main(int argc_org, char **argv_org) {
 			local_family_set = 1;
 			local_family = AF_INET;
 #endif
-			add_agent_options = 1;
+			set_add_agent_options();
 		} else if (!strcmp(argv[i], "-A")) {
 #ifdef DHCPv6
 			if (local_family_set && (local_family == AF_INET6)) {
@@ -367,36 +553,7 @@ main(int argc_org, char **argv_org) {
 #endif
 			if (++i == argc)
 				usage();
-			if (!strcasecmp(argv[i], "append")) {
-				agent_relay_mode = forward_and_append;
-			} else if (!strcasecmp(argv[i], "replace")) {
-				agent_relay_mode = forward_and_replace;
-			} else if (!strcasecmp(argv[i], "forward")) {
-				agent_relay_mode = forward_untouched;
-			} else if (!strcasecmp(argv[i], "discard")) {
-				agent_relay_mode = discard;
-			} else if (!strcasecmp(argv[i], "require")) {
-				agent_relay_mode = require;
-			} else
-				usage();
-		} else if (!strcmp(argv[i], "-mp")) {
-			if (++i == argc)
-				usage();
-			strncpy (tokens, argv[i], 256);
-			char *tok = strtok(tokens, ":");
-			tmp = find_iface(tok);
-			tok = strtok(NULL, ":");
-			if (!strcasecmp(tok, "append")) {
-				tmp->relay_mode = forward_and_append;
-			} else if (!strcasecmp(tok, "replace")) {
-				tmp->relay_mode = forward_and_replace;
-			} else if (!strcasecmp(tok, "forward")) {
-				tmp->relay_mode = forward_untouched;
-			} else if (!strcasecmp(tok, "discard")) {
-				tmp->relay_mode = discard;
-			} else if (!strcasecmp(tok, "require")) {
-				tmp->relay_mode = require;
-			} else
+			if (!set_agent_relay_mode(argv[i]))
 				usage();
 		} else if (!strcmp(argv[i], "-D")) {
 #ifdef DHCPv6
@@ -440,49 +597,6 @@ main(int argc_org, char **argv_org) {
 			sl->next = upstreams;
 			upstreams = sl;
 #endif
-		} else if (!strcmp(argv[i], "-s")) {
-			if (++i == argc)
-				usage();
-			server_port = validate_port(argv[i]);
-			log_debug("Using server port %d", ntohs(server_port));
-		} else if (!strcmp(argv[i], "-rid")) {
-			if (++i == argc) {
-				usage();
-			}
-			strncpy (tokens, argv[i], 256);
-			char *tok = strtok(tokens, ":");
-			tmp = find_iface(tok);
-			tok = strtok(NULL, ":");
-			if (!strcasecmp(tok, "ip")) {
-				tmp->remote_id_type = rid_ip;
-			} else if (!strcasecmp(tok, "mac")) {
-				tmp->remote_id_type = rid_mac;
-			} else if (!strcasecmp(tok, "system-name")) {
-				tmp->remote_id_type = rid_sys_name;
-			} else
-			{
-				usage();
-			}
-		} else if (!strcmp(argv[i], "-cid")) {
-			if (++i == argc) {
-				usage();
-			}
-			strncpy (tokens, argv[i], 256);
-			char *tok = strtok(tokens, ":");
-			tmp = find_iface(tok);
-			tok = strtok(NULL, "");
-			if (tok){
-				if (tmp)
-				{
-					tmp->circuit_id_len = hex2buf(tok, &tmp->circuit_id[0], MAX_LEN_CID);
-					if (tmp->circuit_id_len < 1)
-						usage();
-				}
-				else
-				   usage();
-			}
-			else
-				usage();
 		} else if (!strcmp(argv[i], "--version")) {
 			log_info("isc-dhcrelay-%s", PACKAGE_VERSION);
 			exit(0);
@@ -493,39 +607,11 @@ main(int argc_org, char **argv_org) {
  		} else if (argv[i][0] == '-') {
 			usage();
  		} else {
-			struct hostent *he;
-			struct in_addr ia, *iap = NULL;
-
-#ifdef DHCPv6
-			if (local_family_set && (local_family == AF_INET6)) {
-				usage();
-			}
-			local_family_set = 1;
-			local_family = AF_INET;
-#endif
-			if (inet_aton(argv[i], &ia)) {
-				iap = &ia;
-			} else {
-				he = gethostbyname(argv[i]);
-				if (!he) {
-					log_error("%s: host unknown", argv[i]);
-				} else {
-					iap = ((struct in_addr *)
-					       he->h_addr_list[0]);
-				}
-			}
-
-			if (iap) {
-				sp = ((struct server_list *)
-				      dmalloc(sizeof *sp, MDL));
-				if (!sp)
-					log_fatal("no memory for server.\n");
-				sp->next = servers;
-				servers = sp;
-				memcpy(&sp->to.sin_addr, iap, sizeof *iap);
-			}
+ 			add_server(argv[i]);
  		}
 	}
+
+ setup:
 
 	if (local_family == AF_INET) {
 		path_dhcrelay_pid = getenv("PATH_DHCRELAY_PID");
