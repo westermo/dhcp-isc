@@ -810,6 +810,11 @@ do_relay4(struct interface_info *ip, struct dhcp_packet *packet,
 	   we just sent it. */
 	if (out)
 		return;
+	if (!strcmp("fallback", ip->name))
+	{
+		log_debug("Dropped frame ingressing on interface %s.", ip->name);
+		return;
+	}
 	if (ip->is_parent)
 	{
 		log_debug("Dropped frame ingressing on interface %s which has children.", ip->name);
