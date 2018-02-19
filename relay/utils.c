@@ -24,10 +24,10 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <net/if.h>
-#include <net/ethernet.h>
 #include <netlink/netlink.h>
 #include <netlink/route/link/bridge.h>
+#include <net/if.h>
+#include <net/ethernet.h>
 #include <linux/if_vlan.h>
 #include <linux/sockios.h>
 
